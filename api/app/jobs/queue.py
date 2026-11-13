@@ -4,6 +4,7 @@ import asyncio
 import logging
 import shutil
 
+from app.auth.cookies import discard_job_cookie
 from app.config import get_settings
 from app.errors import ApiError
 from app.jobs.runner import run_download
@@ -54,6 +55,7 @@ class JobManager:
                 error_message="The download failed. Try again.",
             )
         finally:
+            discard_job_cookie(job_id)
             self.tasks.pop(job_id, None)
 
     async def cancel(self, job_id: str) -> None:

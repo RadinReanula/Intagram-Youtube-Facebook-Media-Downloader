@@ -52,6 +52,9 @@ class JobStore:
                 )
                 """
             )
+            columns = {row[1] for row in self._conn.execute("PRAGMA table_info(jobs)")}
+            if "session_hash" not in columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN session_hash TEXT NOT NULL DEFAULT ''")
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, created_at)")
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_lookup ON jobs(url_hash, format_id, status)")
             self._conn.commit()
@@ -71,6 +74,7 @@ class JobStore:
         item_index: int | None,
         status: str,
         title: str | None,
+        session_hash: str = "",
         file_path: str | None = None,
         file_name: str | None = None,
         file_size: int | None = None,
@@ -84,8 +88,8 @@ class JobStore:
                 """
                 INSERT INTO jobs (
                     id, url, url_hash, platform, media_type, format_id, item_index, status,
-                    progress, file_path, file_name, file_size, title, created_at, updated_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    progress, file_path, file_name, file_size, title, created_at, updated_at, expires_at, session_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -104,6 +108,7 @@ class JobStore:
                     iso(now),
                     iso(now),
                     expires,
+                    session_hash,
                 ),
             )
             self._conn.commit()
@@ -177,19 +182,20 @@ class JobStore:
             )
             self._conn.commit()
 
-    def find_ready(self, url_hash: str, format_id: str, item_index: int | None) -> dict[str, Any] | None:
+    def find_ready(self, url_hash: str, format_id: str, item_index: int | None, session_hash: str = "") -> dict[str, Any] | None:
         now = iso(utcnow())
         with self._lock:
             row = self._conn.execute(
                 """
                 SELECT * FROM jobs
                 WHERE url_hash = ? AND format_id = ? AND IFNULL(item_index, -1) = ?
+                  AND IFNULL(session_hash, '') = ?
                   AND status = 'ready' AND file_path IS NOT NULL
                   AND (expires_at IS NULL OR expires_at > ?)
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
-                (url_hash, format_id, -1 if item_index is None else item_index, now),
+                (url_hash, format_id, -1 if item_index is None else item_index, session_hash, now),
             ).fetchone()
         return dict(row) if row else None
 

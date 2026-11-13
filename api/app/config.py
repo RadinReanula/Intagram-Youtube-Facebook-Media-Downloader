@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     enable_instagram: bool = True
     enable_facebook: bool = True
     enable_youtube: bool = True
+    enable_instagram_login: bool = False
+    session_idle_seconds: int = 1800
+    session_absolute_seconds: int = 8 * 3600
+    max_sessions: int = 200
+    cookie_secure: bool = False
 
     ytdlp_path: str = "yt-dlp"
     ffmpeg_path: str = "ffmpeg"

@@ -63,7 +63,7 @@ def _instagram(parts: list[str]) -> str | None:
     if head == "tv" and len(parts) >= 2:
         return "video"
     if head == "stories" and len(parts) >= 2:
-        raise unsupported("Instagram stories need a login, so they aren't supported.")
+        return "story"
     if head in {"explore", "direct", "accounts", "about"}:
         raise unsupported("This Instagram page is not supported.")
     if len(parts) == 1:
@@ -79,6 +79,13 @@ def _facebook(host: str, parts: list[str]) -> str | None:
     lowered = [part.lower() for part in parts]
     if "live" in lowered:
         raise unsupported("Live streams are not supported.")
+    if len(lowered) >= 2 and lowered[0] == "share":
+        kind = lowered[1]
+        if kind == "r":
+            return "reel"
+        if kind == "p":
+            return "post"
+        return "video"
     if "reel" in lowered or "reels" in lowered:
         return "reel"
     if "videos" in lowered or "video" in lowered or "watch" in lowered:

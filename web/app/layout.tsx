@@ -1,8 +1,16 @@
 import type { Metadata } from "next";
+import { Instrument_Serif } from "next/font/google";
 import { Providers } from "@/components/Providers";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
 import "./globals.css";
+
+const instrument = Instrument_Serif({
+  weight: "400",
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-instrument",
+});
 
 export const metadata: Metadata = {
   title: "Media Downloader",
@@ -11,7 +19,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={instrument.variable}>
       <body>
         <Providers>
           <SiteHeader />

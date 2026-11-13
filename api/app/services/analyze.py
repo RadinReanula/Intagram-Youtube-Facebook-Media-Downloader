@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
 from app.cache import TtlCache
 from app.config import get_settings
-from app.errors import limit_exceeded, not_found, unsupported
+from app.auth.cookies import temporary_cookie
+from app.errors import limit_exceeded, login_required, not_found, unsupported
 from app.models import AnalyzeResult, FormatOption
 from app.platforms import get_platform
 from app.platforms.detect import detect
@@ -18,7 +20,7 @@ def get_metadata_cache() -> TtlCache:
     return _cache
 
 
-async def analyze_url(url: str) -> AnalyzeResult:
+async def analyze_url(url: str, session_hash: str = "", instagram_settings: dict | None = None) -> AnalyzeResult:
     cleaned = validate_public_url(url)
     hostname = urlparse(cleaned).hostname or ""
     platform_name = host_platform(hostname)
@@ -28,14 +30,25 @@ async def analyze_url(url: str) -> AnalyzeResult:
     if not settings.platform_enabled(platform_name):
         raise unsupported(f"{platform_name.title()} downloads are turned off right now.")
     detection = detect(cleaned, platform_name)
-    key = normalized_key(cleaned)
+    if detection.media_type == "story" and not session_hash:
+        if settings.enable_instagram_login:
+            raise login_required("Sign in to Instagram to open this story.")
+        raise unsupported("Instagram stories need a sign-in, and sign-in is turned off on this server.")
+    key = f"{session_hash}:{normalized_key(cleaned)}" if session_hash else normalized_key(cleaned)
     cached = _cache.get(key)
     if isinstance(cached, AnalyzeResult):
         return cached.model_copy(update={"cached": True})
-    info = await dump_info(cleaned)
+    async with _cookie_extra(instagram_settings) as extra:
+        info = await dump_info(cleaned, extra) if extra else await dump_info(cleaned)
     result = build_result(detection.platform, detection.media_type, info)
     _cache.set(key, result, settings.metadata_cache_ttl_seconds)
     return result
+
+
+@asynccontextmanager
+async def _cookie_extra(instagram_settings: dict | None):
+    with temporary_cookie(instagram_settings) as extra:
+        yield extra
 
 
 def build_result(platform_name: str, media_type: str | None, info: dict) -> AnalyzeResult:

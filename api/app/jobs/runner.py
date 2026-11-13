@@ -7,6 +7,7 @@ import zipfile
 from datetime import timedelta
 from pathlib import Path
 
+from app.auth.cookies import job_cookie_path
 from app.config import get_settings
 from app.errors import ApiError, blocked
 from app.jobs.store import JobStore, iso, utcnow
@@ -71,6 +72,9 @@ async def run_download(job: dict, store: JobStore) -> None:
         command += ["--playlist-items", str(int(job["item_index"]) + 1)]
     else:
         command.append("--no-playlist")
+    cookie = job_cookie_path(job["id"])
+    if cookie.is_file():
+        command += ["--cookies", str(cookie)]
     command.append(job["url"])
 
     last_percent = -1

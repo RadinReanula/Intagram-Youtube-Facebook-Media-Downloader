@@ -39,7 +39,7 @@ if [ ! -f /etc/media-downloader.env ]; then
     "$ROOT/api/.env.example" > /etc/media-downloader.env
   chmod 640 /etc/media-downloader.env
   chown root:"$APP_USER" /etc/media-downloader.env
-  echo "Edit /etc/media-downloader.env before exposing the API. Set ADMIN_TOKEN, DOWNLOAD_SIGNING_SECRET and CORS_ORIGINS."
+  echo "Edit /etc/media-downloader.env before exposing the API. Set ADMIN_TOKEN, DOWNLOAD_SIGNING_SECRET and CORS_ORIGINS. Leave ENABLE_INSTAGRAM_LOGIN off unless the site and API share a parent domain."
 fi
 
 install -m 644 "$ROOT/deploy/media-downloader.service" /etc/systemd/system/media-downloader.service

@@ -48,8 +48,9 @@ sudo sh deploy/install.sh
 Then edit `/etc/media-downloader.env`:
 
 - `ADMIN_TOKEN` and `DOWNLOAD_SIGNING_SECRET` must be long random strings.
-- `CORS_ORIGINS` must be the Vercel site origin.
+- `CORS_ORIGINS` must be the site origin. The site and the API have to share a parent domain, such as `example.com` and `api.example.com`, or the Instagram session cookie will not be kept. A `*.vercel.app` site with the API on another host will not stay signed in.
 - `TURNSTILE_SECRET` if you turn on the robot check.
+- `ENABLE_INSTAGRAM_LOGIN=true` and `COOKIE_SECURE=true` only when you want per-visit Instagram sign-in. It is off by default. Instagram may challenge or lock sign-ins from a data-centre address.
 - `MAX_CONCURRENT_JOBS`, duration, file size and rate limit are read from this file. Restart the service after a change.
 
 Resource caps live in `deploy/media-downloader.service` (`CPUQuota`, `MemoryMax`, `TasksMax`, `Nice`, idle I/O). Adjust them to the VPS, then `systemctl daemon-reload` and restart.
@@ -70,4 +71,4 @@ Import this repository, set the root directory to `web`, and set:
 
 ## Scope
 
-Public single videos, reels and posts only. Instagram stories are not supported, because they ask for a login. No accounts, playlists, live streams, or platform logins. FFmpeg, installed by the Debian setup, combines separate video and audio into one MP4 and makes the MP3. See the Terms, Privacy and takedown pages in the site.
+Public single videos, reels and posts work without an account. Instagram stories need the optional per-visit Instagram sign-in, which stays on the server and is not shared between visitors. No playlists or live streams. FFmpeg, installed by the Debian setup, combines separate video and audio into one MP4 and makes the MP3. See the Terms, Privacy and takedown pages in the site.

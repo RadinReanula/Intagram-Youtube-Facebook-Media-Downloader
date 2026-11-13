@@ -43,6 +43,11 @@ export function detectLink(raw: string): Detection | null {
     host.endsWith(".fb.watch")
   ) {
     const lowered = parts.map((part) => part.toLowerCase());
+    if (lowered[0] === "share" && lowered[1]) {
+      if (lowered[1] === "r") return { platform: "facebook", mediaType: "reel" };
+      if (lowered[1] === "p") return { platform: "facebook", mediaType: "post" };
+      return { platform: "facebook", mediaType: "video" };
+    }
     if (lowered.includes("reel") || lowered.includes("reels")) return { platform: "facebook", mediaType: "reel" };
     if (lowered.includes("watch") || lowered.includes("videos") || host.endsWith("fb.watch")) {
       return { platform: "facebook", mediaType: "video" };

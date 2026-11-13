@@ -29,5 +29,8 @@
   "27": "instagram.py",
   "28": "__init__.py",
   "29": "__init__.py",
-  "30": "__init__.py"
+  "30": "__init__.py",
+  "31": "test_auth.py",
+  "32": "test_subprocess.py",
+  "33": "__init__.py"
 }

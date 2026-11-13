@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import os
 import shutil
 import signal
+import subprocess
+import time
 from pathlib import Path
 
 from app.config import get_settings
 from app.errors import blocked, limit_exceeded, not_found, private_content, unsupported
 
-_PROCESSES: dict[str, asyncio.subprocess.Process] = {}
+_PROCESSES: dict[str, subprocess.Popen] = {}
 
 
 def map_ytdlp_error(text: str):
@@ -42,41 +43,33 @@ def tool_prefix() -> list[str]:
     return prefix
 
 
-def session_kwargs() -> dict:
-    if os.name == "posix":
-        return {"start_new_session": True}
-    return {}
-
-
-def ytdlp_base() -> list[str]:
+def ytdlp_base(extra: list[str] | None = None) -> list[str]:
     settings = get_settings()
     command = [*tool_prefix(), settings.ytdlp_path, "--ignore-config", "--no-warnings"]
     ffmpeg = settings.ffmpeg_path
     if Path(ffmpeg).is_absolute():
         command += ["--ffmpeg-location", ffmpeg]
+    if extra:
+        command += extra
     return command
 
 
-async def _kill(process: asyncio.subprocess.Process) -> None:
-    if process.returncode is not None:
+def kill_process(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
         return
     if os.name == "posix":
         try:
             os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=5)
             return
-        except ProcessLookupError:
+        except (ProcessLookupError, OSError):
             return
     if os.name == "nt":
-        subprocess_kill = await asyncio.create_subprocess_exec(
-            "taskkill",
-            "/F",
-            "/T",
-            "/PID",
-            str(process.pid),
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+            capture_output=True,
+            check=False,
         )
-        await subprocess_kill.wait()
         return
     process.kill()
 
@@ -84,59 +77,65 @@ async def _kill(process: asyncio.subprocess.Process) -> None:
 async def terminate(job_id: str) -> None:
     process = _PROCESSES.get(job_id)
     if process is not None:
-        await _kill(process)
+        await asyncio.to_thread(kill_process, process)
 
 
-async def run_command(command: list[str], timeout: float, job_id: str | None = None, on_line=None) -> tuple[int, bytes, bytes]:
-    process = await asyncio.create_subprocess_exec(
-        *command,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        **session_kwargs(),
-    )
+def _execute(command: list[str], timeout: float, job_id: str | None, on_line_sync) -> tuple[int, bytes, bytes]:
+    popen_kwargs: dict = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE}
+    if os.name == "posix":
+        popen_kwargs["start_new_session"] = True
+    process = subprocess.Popen(command, **popen_kwargs)
     if job_id:
         _PROCESSES[job_id] = process
-    if process.stdout is not None:
-        process.stdout._limit = 16 * 1024 * 1024
-    if process.stderr is not None:
-        process.stderr._limit = 16 * 1024 * 1024
-
-    async def read_stdout() -> bytes:
-        chunks: list[bytes] = []
+    stdout_parts: list[bytes] = []
+    deadline = time.monotonic() + timeout
+    try:
         assert process.stdout is not None
         while True:
-            line = await process.stdout.readline()
+            if time.monotonic() > deadline:
+                kill_process(process)
+                raise TimeoutError
+            line = process.stdout.readline()
             if not line:
                 break
-            chunks.append(line)
-            if on_line is not None:
-                await on_line(line.decode(errors="replace"))
-        return b"".join(chunks)
-
-    try:
-        stdout_task = asyncio.create_task(read_stdout())
-        stderr_task = asyncio.create_task(process.stderr.read() if process.stderr else _empty())
-        stdout, stderr = await asyncio.wait_for(asyncio.gather(stdout_task, stderr_task), timeout=timeout)
-        code = await process.wait()
-    except TimeoutError:
-        await _kill(process)
-        if process.returncode is None:
-            with contextlib.suppress(Exception):
-                await process.wait()
-        raise limit_exceeded("This download took too long and was stopped.") from None
+            stdout_parts.append(line)
+            if on_line_sync is not None:
+                on_line_sync(line.decode(errors="replace"))
+        remaining = max(1.0, deadline - time.monotonic())
+        try:
+            stderr = process.stderr.read() if process.stderr is not None else b""
+            code = process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            kill_process(process)
+            raise TimeoutError from None
+        return code, b"".join(stdout_parts), stderr or b""
     finally:
         if job_id:
             _PROCESSES.pop(job_id, None)
-    return code, stdout, stderr or b""
+        if process.poll() is None:
+            kill_process(process)
 
 
-async def _empty() -> bytes:
-    return b""
+async def run_command(command: list[str], timeout: float, job_id: str | None = None, on_line=None) -> tuple[int, bytes, bytes]:
+    loop = asyncio.get_running_loop()
+
+    def on_line_sync(text: str) -> None:
+        if on_line is None:
+            return
+        future = asyncio.run_coroutine_threadsafe(on_line(text), loop)
+        future.result(timeout=5)
+
+    try:
+        return await asyncio.to_thread(_execute, command, timeout, job_id, on_line_sync if on_line else None)
+    except TimeoutError:
+        raise limit_exceeded("This download took too long and was stopped.") from None
+    except FileNotFoundError as exc:
+        raise blocked("The extraction tool is not available on the server.") from exc
 
 
-async def dump_info(url: str) -> dict:
+async def dump_info(url: str, extra: list[str] | None = None) -> dict:
     command = [
-        *ytdlp_base(),
+        *ytdlp_base(extra),
         "--no-playlist",
         "--dump-single-json",
         "--skip-download",
@@ -147,10 +146,7 @@ async def dump_info(url: str) -> dict:
         "1",
         url,
     ]
-    try:
-        code, stdout, stderr = await run_command(command, timeout=40)
-    except FileNotFoundError as exc:
-        raise blocked("The extraction tool is not available on the server.") from exc
+    code, stdout, stderr = await run_command(command, timeout=40)
     text = stderr.decode(errors="replace")
     if code != 0 or not stdout.strip():
         raise map_ytdlp_error(text or stdout.decode(errors="replace") or "empty response")

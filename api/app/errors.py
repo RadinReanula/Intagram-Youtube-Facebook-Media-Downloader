@@ -36,3 +36,7 @@ def busy(message: str, **extra: object) -> ApiError:
 
 def limit_exceeded(message: str) -> ApiError:
     return ApiError("limit_exceeded", message, 400)
+
+
+def login_required(message: str = "Sign in to Instagram to open this.") -> ApiError:
+    return ApiError("login_required", message, 401)

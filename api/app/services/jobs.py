@@ -4,8 +4,11 @@ import re
 from datetime import timedelta
 from pathlib import Path
 
+from app.auth.cookies import job_cookie_path, write_cookie_file
+from app.auth.sessions import session_hash
 from app.config import get_settings
 from app.errors import busy, not_found, unsupported
+from fastapi import Request
 from app.jobs.queue import JobManager
 from app.jobs.resources import ensure_capacity
 from app.jobs.store import JobStore, iso, utcnow
@@ -34,20 +37,40 @@ def present(store: JobStore, job: dict) -> JobView:
     )
 
 
-async def create_download(store: JobStore, manager: JobManager, url: str, format_id: str, item_index: int | None) -> JobView:
+def same_session(job: dict, request: Request) -> None:
+    bound = job.get("session_hash") or ""
+    if not bound:
+        return
+    current = session_hash(request)
+    if not current or current != bound:
+        raise not_found("That download was not found.")
+
+
+async def create_download(
+    store: JobStore,
+    manager: JobManager,
+    url: str,
+    format_id: str,
+    item_index: int | None,
+    request: Request | None = None,
+) -> JobView:
     if not _FORMAT_ID.match(format_id):
         raise unsupported("That download option is not available for this link.")
     if item_index is not None and item_index < 0:
         raise unsupported("That item is not available.")
     cleaned = validate_public_url(url)
-    result = await analyze_url(cleaned)
+    from app.auth.sessions import sessions
+
+    bound = session_hash(request) if request is not None else ""
+    instagram_settings = sessions.instagram_settings(request) if request is not None and bound else None
+    result = await analyze_url(cleaned, bound, instagram_settings)
     resolve_format(result, format_id, item_index)
     settings = get_settings()
     if store.queued_count() >= settings.max_queue_length:
         raise busy("The server is busy. Try again later.", position=store.queued_count())
     ensure_capacity(settings)
     url_hash = normalized_key(cleaned)
-    existing = store.find_ready(url_hash, format_id, item_index if format_id != "all" else None)
+    existing = store.find_ready(url_hash, format_id, item_index if format_id != "all" else None, bound)
     if existing and Path(existing["file_path"]).is_file():
         job = store.create(
             url=cleaned,
@@ -58,6 +81,7 @@ async def create_download(store: JobStore, manager: JobManager, url: str, format
             item_index=item_index,
             status="ready",
             title=result.title,
+            session_hash=bound,
             file_path=existing["file_path"],
             file_name=existing["file_name"],
             file_size=existing["file_size"],
@@ -74,7 +98,14 @@ async def create_download(store: JobStore, manager: JobManager, url: str, format
         item_index=item_index,
         status="queued",
         title=result.title,
+        session_hash=bound,
     )
+    if bound and instagram_settings:
+        write_cookie_file(job_cookie_path(job["id"]), instagram_settings)
+        if request is not None:
+            token = sessions.read_token(request)
+            if token:
+                sessions.remember_job(token, job["id"])
     await manager.submit(job["id"])
     created = store.get(job["id"])
     if created is None:

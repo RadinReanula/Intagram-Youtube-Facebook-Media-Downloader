@@ -30,9 +30,7 @@ def test_instagram_shapes():
     assert detect("https://www.instagram.com/reel/ABC123/", "instagram").media_type == "reel"
     assert detect("https://www.instagram.com/p/ABC123/", "instagram").media_type == "post"
     assert detect("https://www.instagram.com/tv/ABC123/", "instagram").media_type == "video"
-    with pytest.raises(ApiError) as story:
-        detect("https://www.instagram.com/stories/instagram/1/", "instagram")
-    assert story.value.code == "unsupported"
+    assert detect("https://www.instagram.com/stories/instagram/1/", "instagram").media_type == "story"
     with pytest.raises(ApiError):
         detect("https://www.instagram.com/instagram/", "instagram")
 
@@ -41,6 +39,8 @@ def test_facebook_shapes():
     assert detect("https://www.facebook.com/watch/?v=1", "facebook").media_type == "video"
     assert detect("https://www.facebook.com/reel/123", "facebook").media_type == "reel"
     assert detect("https://fb.watch/abc/", "facebook").media_type == "video"
+    assert detect("https://www.facebook.com/share/v/1FG8zGngyR/", "facebook").media_type == "video"
+    assert detect("https://www.facebook.com/share/r/abc/", "facebook").media_type == "reel"
     assert detect("https://www.facebook.com/page/posts/123", "facebook").media_type == "post"
     with pytest.raises(ApiError):
         detect("https://www.facebook.com/somepage", "facebook")
