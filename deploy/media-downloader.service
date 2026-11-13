@@ -1,0 +1,32 @@
+[Unit]
+Description=Media Downloader API
+After=network.target
+
+[Service]
+Type=simple
+User=media-downloader
+Group=media-downloader
+WorkingDirectory=/opt/media-downloader/api
+EnvironmentFile=/etc/media-downloader.env
+ExecStart=/opt/media-downloader/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+Restart=always
+RestartSec=3
+Nice=10
+CPUQuota=50%
+MemoryMax=512M
+TasksMax=64
+IOSchedulingClass=idle
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictRealtime=true
+ReadWritePaths=/var/lib/media-downloader
+
+[Install]
+WantedBy=multi-user.target

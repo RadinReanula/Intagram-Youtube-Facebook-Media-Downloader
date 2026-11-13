@@ -1,0 +1,8 @@
+[Unit]
+Description=Update yt-dlp and restart Media Downloader
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/media-downloader/.venv/bin/pip install --upgrade yt-dlp
+ExecStartPost=/bin/systemctl restart media-downloader.service

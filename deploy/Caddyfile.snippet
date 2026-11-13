@@ -1,0 +1,6 @@
+# Add this site to the reverse proxy that already serves the VPS.
+# Point the DNS name at the server, then reload Caddy.
+
+api.example.com {
+	reverse_proxy 127.0.0.1:8000
+}
